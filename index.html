@@ -67,6 +67,7 @@ th:first-child,td:first-child{text-align:left;white-space:normal}
     <li>映像と写真はこの端末の中だけで処理され、どこにも送信されません。撮影は本人の同意を得て行ってください。</li>
   </ul>
   <button id="go">カメラを起動</button>
+  <p style="font-size:12px;color:#8a9">版 2026-11-27b</p>
   <div id="status"></div>
 </div>
 
@@ -88,11 +89,12 @@ th:first-child,td:first-child{text-align:left;white-space:normal}
   このアプリは <a href="https://github.com/google-ai-edge/mediapipe" target="_blank" rel="noopener">Google MediaPipe</a>（<a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener">Apache License 2.0</a>）を使用しています。姿勢推定モデルはGoogleの公式配布元から読み込みます。</p>
 </div>
 
-<script type="module">
-import {PoseLandmarker, FilesetResolver} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+<script>
+window.addEventListener("error", e => { const s = document.getElementById("status"); if (s) s.textContent = "エラー：" + e.message; });
 {
 const MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
-const WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+const LIB = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+const WASM = LIB + "/wasm";
 // 目標位置（画像の高さに対する割合）と許容範囲
 const TOP = 0.06, BOTTOM = 0.94, TOL = 0.025, CTOL = 0.025;
 const LV_ROLL = 1.0, LV_PITCH = 2.0, YAW_OK = 6;
@@ -140,6 +142,10 @@ async function startCam() {
 async function loadModel() {
   showMsg("姿勢モデルを読み込み中…");
   try {
+    let lib = null;
+    for (const u of [LIB + "/vision_bundle.mjs", LIB]) { try { lib = await import(u); if (lib.PoseLandmarker) break; } catch (e) {} }
+    if (!lib || !lib.PoseLandmarker) throw new Error("lib");
+    const {PoseLandmarker, FilesetResolver} = lib;
     const fs = await FilesetResolver.forVisionTasks(WASM);
     const opt = d => ({baseOptions: {modelAssetPath: MODEL, delegate: d}, runningMode: "VIDEO",
       numPoses: 1, outputSegmentationMasks: true});
@@ -396,4 +402,12 @@ $("bAuto").onclick = () => { auto = !auto; $("bAuto").classList.toggle("on", aut
 $("bCompare").onclick = openSheet;
 $("bFlip").onclick = async () => {
   facing = facing === "environment" ? "user" : "environment"; st = null;
-  try { await startCam(); } cat
+  try { await startCam(); } catch (e) { showMsg("カメラを切り替えられませんでした", 1500); }
+};
+$("close").onclick = () => $("sheet").style.display = "none";
+$("reBefore").onclick = () => { setSlot("before"); $("sheet").style.display = "none"; };
+$("reAfter").onclick = () => { setSlot("after"); $("sheet").style.display = "none"; };
+}
+</script>
+</body>
+</html>
