@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>姿勢撮影ガイド 試作版</title>
+<style>
+:root{--ok:#5fd38d;--ng:#ff7a66;--warn:#ffd24a}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#111;color:#fff;font:15px/1.5 -apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;overflow:hidden}
+#cv{position:fixed;inset:0;width:100%;height:100%;display:block}
+video{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+#hud{position:fixed;left:0;right:0;top:0;padding:calc(env(safe-area-inset-top) + 8px) 10px 6px;pointer-events:none}
+#chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{background:rgba(0,0,0,.6);border-radius:999px;padding:3px 10px;font-size:13px;color:#bbb}
+.chip.ok{color:var(--ok)}.chip.ng{color:var(--ng)}
+#hint{margin-top:6px;font-size:15px;font-weight:700;text-shadow:0 1px 3px #000;min-height:1.5em}
+#bar{position:fixed;left:0;right:0;bottom:0;padding:16px 10px calc(env(safe-area-inset-bottom) + 12px);display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;background:linear-gradient(transparent,rgba(0,0,0,.75))}
+button,.btn{font:inherit;font-size:14px;min-height:44px;padding:0 12px;border-radius:12px;border:1px solid rgba(255,255,255,.35);background:rgba(0,0,0,.5);color:#fff;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
+button.on{background:#fff;color:#111}
+#shot{width:66px;height:66px;border-radius:50%;background:#fff;border:5px solid rgba(255,255,255,.35);padding:0}
+#start{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;background:#16201a;z-index:5;overflow:auto}
+#start h1{font-size:22px;margin:0}
+#start p,#start li{margin:0;color:#cfd8cf;font-size:14px}
+#start ul{text-align:left;max-width:30em;margin:0;padding-left:1.2em}
+#go{background:var(--ok);color:#111;border:0;font-weight:700;padding:0 32px;font-size:16px}
+#status{font-size:13px;color:var(--warn);min-height:1.4em}
+#sheet{position:fixed;inset:0;background:#f6f5f1;color:#222;z-index:6;overflow:auto;display:none;padding:calc(env(safe-area-inset-top) + 12px) 14px calc(env(safe-area-inset-bottom) + 24px)}
+#sheet h2{font-size:18px;margin:4px 0 12px}
+#sheet h3{font-size:15px;margin:18px 0 0}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.pair figure{margin:0}.pair img{width:100%;border-radius:8px;background:#ddd;display:block;min-height:80px}
+.pair figcaption{font-weight:700;margin:2px 0 4px}
+table{width:100%;border-collapse:collapse;margin-top:6px;font-size:14px}
+th,td{padding:7px 4px;border-bottom:1px solid #ddd;text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left;white-space:normal}
+#sheet button,#sheet .btn{color:#222;background:#fff;border-color:#bbb;margin:4px 4px 0 0}
+.note{font-size:12px;color:#666;margin-top:16px}
+.note a{color:#3a533a}
+#msg{position:fixed;left:50%;top:40%;transform:translate(-50%,-50%);background:rgba(0,0,0,.75);padding:10px 16px;border-radius:12px;display:none;z-index:4;text-align:center}
+#flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s;z-index:3}
+</style>
+</head>
+<body>
+<video id="video" playsinline muted></video>
+<canvas id="cv"></canvas>
+<div id="hud"><div id="chips"></div><div id="hint"></div></div>
+<div id="bar">
+  <button id="bBefore" class="on">施術前</button>
+  <button id="bAfter">施術後</button>
+  <button id="shot" aria-label="撮影"></button>
+  <button id="bAuto" class="on">自動撮影</button>
+  <button id="bCompare">比較</button>
+  <button id="bFlip">切替</button>
+</div>
+<div id="msg"></div>
+<div id="flash"></div>
+
+<div id="start">
+  <h1>姿勢撮影ガイド（試作版）</h1>
+  <p>施術の前後で、同じ条件で正面の立位姿勢を撮影し、数値を並べて比べるためのツールです。</p>
+  <ul>
+    <li>スマホを縦に持つか、三脚に縦向きで固定してください。</li>
+    <li>画面の玉が中央に来る＝カメラが水平です。</li>
+    <li>頭のてっぺんと足の裏を2本の線に合わせ、体の中心を縦線に合わせます。</li>
+    <li>全部そろうと自動で撮影します。</li>
+    <li>映像と写真はこの端末の中だけで処理され、どこにも送信されません。撮影は本人の同意を得て行ってください。</li>
+  </ul>
+  <button id="go">カメラを起動</button>
+  <div id="status"></div>
+</div>
+
+<div id="sheet">
+  <h2>施術前後の比較</h2>
+  <div class="pair" id="imgs"></div>
+  <h3>姿勢の数値</h3>
+  <table id="tm"></table>
+  <h3>撮影条件</h3>
+  <table id="tc"></table>
+  <div id="saves"></div>
+  <div style="margin-top:10px">
+    <button id="reBefore">施術前を撮り直す</button>
+    <button id="reAfter">施術後を撮り直す</button>
+    <button id="close">カメラに戻る</button>
+  </div>
+  <p class="note">表示される数値は、画像から推定した目安です。医療機器ではなく、病気の診断・治療・予防を目的としたものではありません。施術の効果を保証するものでもありません。<br>
+  角度の符号：肩・骨盤は「画面の右側が下がる」とプラス。左右のずれは「画面の右側へ」がプラス（身長に対する％）。<br>
+  このアプリは <a href="https://github.com/google-ai-edge/mediapipe" target="_blank" rel="noopener">Google MediaPipe</a>（<a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener">Apache License 2.0</a>）を使用しています。姿勢推定モデルはGoogleの公式配布元から読み込みます。</p>
+</div>
+
+<script type="module">
+import {PoseLandmarker, FilesetResolver} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+{
+const MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
+const WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+// 目標位置（画像の高さに対する割合）と許容範囲
+const TOP = 0.06, BOTTOM = 0.94, TOL = 0.025, CTOL = 0.025;
+const LV_ROLL = 1.0, LV_PITCH = 2.0, YAW_OK = 6;
+const NAMES = {before: "施術前", after: "施術後"};
+
+const $ = id => document.getElementById(id);
+const video = $("video"), cv = $("cv"), ctx = cv.getContext("2d");
+let pose = null, facing = "environment", stream = null, slot = "before", auto = true;
+let okSince = 0, lastShot = 0, lastT = -1, lastHud = 0, sensorSeen = false;
+const tilt = {roll: 0, pitch: 0, has: false};
+const shots = {before: null, after: null};
+let st = null;
+
+const clamp = (v, a = -1, b = 1) => Math.max(a, Math.min(b, v));
+const deg = r => r * 180 / Math.PI;
+const mid = (a, b) => ({x: (a.x + b.x) / 2, y: (a.y + b.y) / 2});
+const ema = (prev, v, k) => (prev == null || v == null) ? v : prev + (v - prev) * k;
+const fmt = (v, u = "") => v == null || isNaN(v) ? "–" : (v > 0 ? "+" : "") + v.toFixed(1) + u;
+
+function showMsg(t, ms) {
+  const m = $("msg"); m.textContent = t; m.style.display = "block";
+  clearTimeout(showMsg.t); if (ms) showMsg.t = setTimeout(() => m.style.display = "none", ms);
+}
+const hideMsg = () => $("msg").style.display = "none";
+
+// 端末の傾き：beta/gamma から「上向き」ベクトルを求め、縦持ち基準の左右・前後の傾きにする
+function onOri(e) {
+  if (e.beta == null || e.gamma == null) return;
+  sensorSeen = true;
+  const b = e.beta * Math.PI / 180, g = e.gamma * Math.PI / 180;
+  const ux = -Math.cos(b) * Math.sin(g), uy = Math.sin(b), uz = Math.cos(b) * Math.cos(g);
+  const roll = deg(Math.atan2(ux, uy));
+  const pitch = deg(Math.atan2(uz, Math.hypot(ux, uy)));
+  const k = tilt.has ? 0.25 : 1;
+  tilt.roll += (roll - tilt.roll) * k; tilt.pitch += (pitch - tilt.pitch) * k; tilt.has = true;
+}
+
+async function startCam() {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: {facingMode: facing, width: {ideal: 1280}, height: {ideal: 1280}}, audio: false});
+  video.srcObject = stream; await video.play();
+}
+
+async function loadModel() {
+  showMsg("姿勢モデルを読み込み中…");
+  try {
+    const fs = await FilesetResolver.forVisionTasks(WASM);
+    const opt = d => ({baseOptions: {modelAssetPath: MODEL, delegate: d}, runningMode: "VIDEO",
+      numPoses: 1, outputSegmentationMasks: true});
+    try { pose = await PoseLandmarker.createFromOptions(fs, opt("GPU")); }
+    catch (e) { pose = await PoseLandmarker.createFromOptions(fs, opt("CPU")); }
+    hideMsg();
+  } catch (e) { showMsg("姿勢モデルを読み込めませんでした。通信環境を確認してください。"); }
+}
+
+$("go").onclick = async () => {
+  $("go").disabled = true; $("status").textContent = "準備中…";
+  try {
+    if (typeof DeviceOrientationEvent !== "undefined" && DeviceOrientationEvent.requestPermission)
+      await DeviceOrientationEvent.requestPermission().catch(() => {});
+  } catch (e) {}
+  addEventListener("deviceorientation", onOri);
+  try { await startCam(); }
+  catch (e) { $("status").textContent = "カメラを起動できませんでした（" + e.name + "）。https のページで開いているか確認してください。"; $("go").disabled = false; return; }
+  $("start").style.display = "none";
+  loadModel(); requestAnimationFrame(loop);
+};
+
+function analyze(r, vw, vh) {
+  const lm = r.landmarks && r.landmarks[0];
+  const wl = r.worldLandmarks && r.worldLandmarks[0];
+  const m = r.segmentationMasks && r.segmentationMasks[0];
+  let headTop = null;
+  if (m && lm) {
+    try {
+      const a = m.getAsFloat32Array(), w = m.width, h = m.height;
+      const cx = lm[0].x, x0 = Math.max(0, Math.floor((cx - 0.12) * w)), x1 = Math.min(w, Math.ceil((cx + 0.12) * w));
+      outer: for (let y = 0; y < h; y += 2) for (let x = x0; x < x1; x += 2)
+        if (a[y * w + x] > 0.5) { headTop = y / h; break outer; }
+    } catch (e) {}
+  }
+  if (m) { try { m.close(); } catch (e) {} }
+  if (!lm) { st = null; return; }
+
+  const P = i => ({x: lm[i].x * vw, y: lm[i].y * vh});
+  const ls = P(11), rs = P(12), lh = P(23), rh = P(24);
+  const shM = mid(ls, rs), hpM = mid(lh, rh);
+  if (headTop == null) { // 輪郭が取れない時の目安：目の高さから推定
+    const eyeY = Math.min(lm[2].y, lm[5].y);
+    headTop = eyeY - 0.55 * (shM.y / vh - eyeY);
+  }
+  const feetY = Math.max(...[27, 28, 29, 30, 31, 32].map(i => lm[i].y));
+  const footVis = Math.min(lm[29].visibility ?? 1, lm[30].visibility ?? 1);
+  const ankX = (lm[27].x + lm[28].x) / 2;
+  const baseX = (hpM.x / vw + ankX) / 2;
+  const bodyH = Math.max(1, (feetY - headTop) * vh);
+  const tiltOf = (a, b) => { const [p, q] = a.x < b.x ? [a, b] : [b, a]; return deg(Math.atan2(q.y - p.y, q.x - p.x)); };
+  let yaw = null;
+  if (wl) yaw = deg(Math.atan2(wl[11].z - wl[12].z, Math.abs(wl[11].x - wl[12].x) || 1e-6));
+
+  const k = 0.4, p = st || {};
+  st = {
+    top: ema(p.top, headTop, k), feetY: ema(p.feetY, feetY, k), baseX: ema(p.baseX, baseX, k),
+    yaw: ema(p.yaw, yaw, 0.3), footOk: footVis > 0.5,
+    shoulder: ema(p.shoulder, tiltOf(ls, rs), k), pelvis: ema(p.pelvis, tiltOf(lh, rh), k),
+    trunk: ema(p.trunk, (shM.x - hpM.x) / bodyH * 100, k),
+    head: ema(p.head, (lm[0].x * vw - hpM.x) / bodyH * 100, k),
+    pts: {ls, rs, lh, rh, shM, hpM, noseX: lm[0].x}
+  };
+}
+
+function checks() {
+  const c = {level: null, top: false, bottom: false, center: false, yaw: null};
+  if (tilt.has) c.level = Math.abs(tilt.roll) < LV_ROLL && Math.abs(tilt.pitch) < LV_PITCH;
+  if (st) {
+    c.top = Math.abs(st.top - TOP) < TOL;
+    c.bottom = st.footOk && Math.abs(st.feetY - BOTTOM) < TOL;
+    c.center = Math.abs(st.baseX - 0.5) < CTOL;
+    if (st.yaw != null) c.yaw = Math.abs(st.yaw) < YAW_OK;
+  }
+  c.all = !!st && c.level !== false && c.top && c.bottom && c.center && c.yaw !== false;
+  return c;
+}
+
+function hint(c) {
+  if (innerWidth > innerHeight) return "スマホを縦向きにしてください";
+  if (!pose) return "";
+  if (c.level === false) {
+    if (Math.abs(tilt.roll) >= LV_ROLL) return tilt.roll > 0 ? "スマホを少し左に回して水平に" : "スマホを少し右に回して水平に";
+    return tilt.pitch > 0 ? "カメラが下を向いています。上端を手前に起こして" : "カメラが上を向いています。上端を奥に倒して";
+  }
+  if (!st) return "全身が映るように立ってもらってください";
+  if (!st.footOk) return "足先まで映るようにしてください";
+  const ratio = st.feetY - st.top, target = BOTTOM - TOP;
+  if (ratio > target + TOL) return "少し離れてください";
+  if (ratio < target - TOL) return "少し近づいてください";
+  const midY = (st.top + st.feetY) / 2;
+  if (midY < 0.5 - TOL / 2) return "カメラの高さを少し上げてください";
+  if (midY > 0.5 + TOL / 2) return "カメラの高さを少し下げてください";
+  if (!c.center) return (st.baseX < 0.5) === (facing === "user") ? "体が画面の右に寄っています" : "体が画面の左に寄っています";
+  if (c.yaw === false) return "体をカメラにまっすぐ向けてください";
+  return "そろいました";
+}
+
+function line(x1, y1, x2, y2) { ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); }
+function label(t, x, y, col, dpr) {
+  ctx.font = `${13 * dpr}px sans-serif`; ctx.fillStyle = "rgba(0,0,0,.55)";
+  const w = ctx.measureText(t).width; ctx.fillRect(x - 4 * dpr, y - 14 * dpr, w + 8 * dpr, 19 * dpr);
+  ctx.fillStyle = col; ctx.fillText(t, x, y);
+}
+
+function draw(g, c) {
+  const {ox, oy, dw, dh, mir, dpr} = g;
+  const X = x => ox + (mir ? 1 - x : x) * dw, Y = y => oy + y * dh;
+  const OK = "#5fd38d", NG = "rgba(255,255,255,.85)";
+  const cx = X(0.5), cy = Y(0.5);
+
+  // 十字線（薄く）
+  ctx.lineWidth = 1.2 * dpr; ctx.setLineDash([]);
+  ctx.strokeStyle = "rgba(255,255,255,.3)";
+  line(ox, cy, ox + dw, cy);
+  ctx.strokeStyle = c.center ? OK : "rgba(255,255,255,.3)"; ctx.lineWidth = (c.center ? 3 : 1.2) * dpr;
+  line(cx, oy, cx, oy + dh);
+
+  // 頭頂・足底の固定ガイド
+  ctx.lineWidth = 2.5 * dpr; ctx.setLineDash([10 * dpr, 6 * dpr]);
+  ctx.strokeStyle = c.top ? OK : NG; line(ox, Y(TOP), ox + dw, Y(TOP));
+  ctx.strokeStyle = c.bottom ? OK : NG; line(ox, Y(BOTTOM), ox + dw, Y(BOTTOM));
+  ctx.setLineDash([]);
+  label("頭のてっぺん", ox + 8 * dpr, Y(TOP) - 6 * dpr, c.top ? OK : "#fff", dpr);
+  label("足の裏", ox + 8 * dpr, Y(BOTTOM) + 20 * dpr, c.bottom ? OK : "#fff", dpr);
+
+  // 検出した体の位置
+  if (st) {
+    const s = st.pts, vw = video.videoWidth, vh = video.videoHeight;
+    const PX = p => [X(p.x / vw), Y(p.y / vh)];
+    ctx.strokeStyle = "#ffd24a"; ctx.lineWidth = 2 * dpr;
+    line(...PX(s.ls), ...PX(s.rs)); line(...PX(s.lh), ...PX(s.rh)); line(...PX(s.shM), ...PX(s.hpM));
+    ctx.fillStyle = c.top ? OK : "#ff7a66";
+    ctx.beginPath(); ctx.arc(X(s.noseX), Y(st.top), 6 * dpr, 0, 7); ctx.fill();
+    ctx.strokeStyle = c.bottom ? OK : "#ff7a66"; ctx.lineWidth = 3 * dpr;
+    line(X(st.baseX) - 40 * dpr, Y(st.feetY), X(st.baseX) + 40 * dpr, Y(st.feetY));
+    ctx.fillStyle = c.center ? OK : "#ff7a66";
+    ctx.beginPath(); const bx = X(st.baseX), by = Y(BOTTOM) + 4 * dpr;
+    ctx.moveTo(bx, by); ctx.lineTo(bx - 8 * dpr, by + 12 * dpr); ctx.lineTo(bx + 8 * dpr, by + 12 * dpr); ctx.fill();
+  }
+
+  // 水平器（玉）
+  const R = Math.min(dw, dh) * 0.11;
+  ctx.lineWidth = 1.5 * dpr; ctx.strokeStyle = "rgba(255,255,255,.55)";
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, R * 0.2, 0, 7); ctx.stroke();
+  if (tilt.has) {
+    const bx = cx + clamp(tilt.roll / 8) * R, by = cy + clamp(tilt.pitch / 8) * R;
+    ctx.fillStyle = c.level ? OK : "#ff7a66";
+    ctx.beginPath(); ctx.arc(bx, by, R * 0.16, 0, 7); ctx.fill();
+  } else {
+    label(sensorSeen ? "" : "傾きセンサーなし", cx - 50 * dpr, cy + 5 * dpr, "#ccc", dpr);
+  }
+  // 体の向き（正対）ゲージ
+  const gy = cy + R + 22 * dpr;
+  ctx.strokeStyle = "rgba(255,255,255,.55)"; ctx.lineWidth = 4 * dpr; ctx.lineCap = "round";
+  line(cx - R, gy, cx + R, gy); ctx.lineCap = "butt";
+  ctx.lineWidth = 1.5 * dpr; line(cx, gy - 7 * dpr, cx, gy + 7 * dpr);
+  if (st && st.yaw != null) {
+    ctx.fillStyle = c.yaw ? OK : "#ff7a66";
+    ctx.beginPath(); ctx.arc(cx + clamp(st.yaw / 20) * R * (mir ? -1 : 1), gy, 7 * dpr, 0, 7); ctx.fill();
+  }
+  label("体の向き", cx - 26 * dpr, gy + 26 * dpr, "#fff", dpr);
+
+  // 自動撮影のカウント
+  if (c.all && okSince) {
+    const f = clamp((performance.now() - okSince) / 1200, 0, 1);
+    ctx.strokeStyle = OK; ctx.lineWidth = 5 * dpr;
+    ctx.beginPath(); ctx.arc(cx, cy, R + 8 * dpr, -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2); ctx.stroke();
+  }
+}
+
+function updateHud(c) {
+  const chip = (t, v) => `<span class="chip ${v === null ? "" : v ? "ok" : "ng"}">${t}</span>`;
+  $("chips").innerHTML = chip("水平 " + (tilt.has ? `${tilt.roll.toFixed(1)}° / ${tilt.pitch.toFixed(1)}°` : "–"), c.level)
+    + chip("頭", st ? c.top : false) + chip("足", st ? c.bottom : false)
+    + chip("中心", st ? c.center : false)
+    + chip("向き " + (st && st.yaw != null ? Math.abs(st.yaw).toFixed(0) + "°" : "–"), c.yaw)
+    + chip(NAMES[slot] + "を撮影", null);
+  $("hint").textContent = hint(c);
+}
+
+function loop() {
+  requestAnimationFrame(loop);
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw) return;
+  const dpr = devicePixelRatio || 1;
+  const W = Math.round(cv.clientWidth * dpr), H = Math.round(cv.clientHeight * dpr);
+  if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+  const s = Math.min(W / vw, H / vh), dw = vw * s, dh = vh * s, ox = (W - dw) / 2, oy = (H - dh) / 2;
+  const mir = facing === "user";
+  ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
+  ctx.save(); if (mir) { ctx.translate(W, 0); ctx.scale(-1, 1); }
+  ctx.drawImage(video, ox, oy, dw, dh); ctx.restore();
+
+  if (pose && video.currentTime !== lastT) {
+    lastT = video.currentTime;
+    try { analyze(pose.detectForVideo(video, performance.now()), vw, vh); } catch (e) {}
+  }
+  const c = checks(), now = performance.now();
+  if (c.all) { if (!okSince) okSince = now; } else okSince = 0;
+  draw({ox, oy, dw, dh, mir, dpr}, c);
+  if (now - lastHud > 150) { lastHud = now; updateHud(c); }
+  if (auto && c.all && okSince && now - okSince > 1200 && now - lastShot > 3000) capture(c);
+}
+
+function capture(c) {
+  if (!st) { showMsg("人物が検出されていません", 1500); return; }
+  c = c || checks();
+  const vw = video.videoWidth, vh = video.videoHeight;
+  const oc = document.createElement("canvas"); oc.width = vw; oc.height = vh;
+  const o = oc.getContext("2d"); o.drawImage(video, 0, 0, vw, vh);
+  const s = st.pts, L = (a, b) => { o.beginPath(); o.moveTo(a.x, a.y); o.lineTo(b.x, b.y); o.stroke(); };
+  o.lineWidth = Math.max(2, vw / 320);
+  o.strokeStyle = "rgba(255,255,255,.6)"; L({x: vw / 2, y: 0}, {x: vw / 2, y: vh});
+  o.strokeStyle = "#ffd24a"; L(s.ls, s.rs); L(s.lh, s.rh); L(s.shM, s.hpM);
+  shots[slot] = {
+    img: oc.toDataURL("image/jpeg", 0.88),
+    m: {shoulder: st.shoulder, pelvis: st.pelvis, trunk: st.trunk, head: st.head},
+    cond: {roll: tilt.has ? tilt.roll : null, pitch: tilt.has ? tilt.pitch : null, yaw: st.yaw,
+      body: (st.feetY - st.top) * 100, aligned: c.all},
+    time: new Date()
+  };
+  lastShot = performance.now(); okSince = 0;
+  const f = $("flash"); f.style.opacity = .8; setTimeout(() => f.style.opacity = 0, 120);
+  showMsg(NAMES[slot] + "を記録しました", 1400);
+  if (slot === "before") setSlot("after"); else setTimeout(openSheet, 600);
+}
+
+function setSlot(s) { slot = s; $("bBefore").classList.toggle("on", s === "before"); $("bAfter").classList.toggle("on", s === "after"); }
+
+function openSheet() {
+  const b = shots.before, a = shots.after;
+  $("imgs").innerHTML = ["before", "after"].map(k => `<figure><figcaption>${NAMES[k]}</figcaption>${shots[k] ? `<img src="${shots[k].img}" alt="${NAMES[k]}">` : `<p style="color:#888">未撮影</p>`}</figure>`).join("");
+  const rows = (list, key) => `<tr><th>項目</th><th>前</th><th>後</th><th>差</th></tr>` + list.map(([n, f, u]) => {
+    const vb = b ? b[key][f] : null, va = a ? a[key][f] : null;
+    const d = vb != null && va != null ? va - vb : null;
+    return `<tr><td>${n}</td><td>${fmt(vb, u)}</td><td>${fmt(va, u)}</td><td>${fmt(d, u)}</td></tr>`;
+  }).join("");
+  $("tm").innerHTML = rows([["肩の傾き", "shoulder", "°"], ["骨盤の傾き", "pelvis", "°"], ["体幹の左右ずれ", "trunk", "%"], ["頭の左右ずれ", "head", "%"]], "m");
+  $("tc").innerHTML = rows([["スマホの左右の傾き", "roll", "°"], ["スマホの前後の傾き", "pitch", "°"], ["体の向き", "yaw", "°"], ["画面に占める身長", "body", "%"]], "cond")
+    + `<tr><td>ガイドが全部そろっていたか</td><td>${b ? (b.cond.aligned ? "はい" : "いいえ") : "–"}</td><td>${a ? (a.cond.aligned ? "はい" : "いいえ") : "–"}</td><td></td></tr>`;
+  $("saves").innerHTML = ["before", "after"].filter(k => shots[k]).map(k => {
+    const t = shots[k].time, name = `posture_${k}_${t.getFullYear()}${String(t.getMonth() + 1).padStart(2, "0")}${String(t.getDate()).padStart(2, "0")}_${String(t.getHours()).padStart(2, "0")}${String(t.getMinutes()).padStart(2, "0")}.jpg`;
+    return `<a class="btn" href="${shots[k].img}" download="${name}">${NAMES[k]}の画像を保存</a>`;
+  }).join("");
+  $("sheet").style.display = "block";
+}
+
+$("shot").onclick = () => capture();
+$("bBefore").onclick = () => setSlot("before");
+$("bAfter").onclick = () => setSlot("after");
+$("bAuto").onclick = () => { auto = !auto; $("bAuto").classList.toggle("on", auto); };
+$("bCompare").onclick = openSheet;
+$("bFlip").onclick = async () => {
+  facing = facing === "environment" ? "user" : "environment"; st = null;
+  try { await startCam(); } cat
